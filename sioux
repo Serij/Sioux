@@ -1,0 +1,105 @@
+#!/usr/bin/perl
+
+if($ARGV[0] eq "start") {
+	# L'argument est start
+	if(-f "lib/pidSioux"){
+		# Si le fichier pid existe, c'est que le serveur est déjà lancé
+		print "Le serveur est déjà lancé.\n";
+		exit;
+	}
+	elsif(-f "sioux.conf") {
+		# Sinon on crée un processus, qui va lancer le serveur
+		$pidServeur = fork;
+
+		if ($pidServeur == 0) {
+			# Le nouveau processus lance le serveur
+			do 'lib/serveur';
+		}
+		exit;
+	}
+	else {
+		print "Il faut d'abord configurer le serveur. Commande : sioux configure\n";
+	}
+}
+elsif($ARGV[0] eq "stop") {
+	# L'argument est stop
+	open(SAVE, "lib/pidSioux");
+	# On récupère le numéro du processus du serveur dans le fichier de sauvegarde
+	$pidServeur = <SAVE>;
+		
+	# On tue le processus du serveur, le serveur s'arrête
+	kill('TERM', $pidServeur);
+	
+	close(SAVE);
+
+	# On supprime le fichier de sauvegarde
+	unlink ("lib/pidServeur");
+
+	print "Le serveur a été arrêté.\n";
+	exit;
+}
+elsif($ARGV[0] eq "configure") {
+	$conf = false;
+	# On ouvre le fichier de configuration en écriture
+	
+	while($conf eq "false") {
+
+		open(CONF, ">sioux.conf");
+
+		print "port = ";
+		$port = <STDIN>;
+		chomp($port);
+		print CONF "port = $port\n";
+
+		print "rootdir = ";
+		$rootdir = <STDIN>;
+		chomp($rootdir);
+		print CONF "rootdir = $rootdir\n";
+		
+		print "index = ";
+		$index = <STDIN>;
+		chomp($index);
+		print CONF "index = $index\n";
+
+		print "cgidir = ";
+		$cgidir = <STDIN>;
+		chomp($cgidir);
+		print CONF "cgidir = $cgidir\n";
+
+		print "maxclients = ";
+		$maxclients = <STDIN>;
+		chomp($maxclients);
+		print CONF "maxclients = $maxclients\n";
+
+		# On enregistre le chemin du répertoire cgi
+		($chemincgidir, @reste) = split(/cgidir/, $cgidir);
+		# On enregistre le chemin du répertoire public_html
+		($cheminrootdir, @reste) = split(/public_html/, $rootdir);
+
+		if($chemincgidir eq $rootdir."/") {
+			print "\n\n\tImpossible de placer le répertoire cgidir dans rootdir\n\n";
+			close(CONF);
+			unlink("sioux.conf");
+		}
+		elsif($cheminrootdir eq $cgidir."/") {
+			print "\n\n\tImpossible de placer le répertoire rootdir dans cgidir\n\n";
+			close(CONF);
+			unlink("sioux.conf");
+		}
+		elsif($rootdir eq $cgidir) {
+			print "\n\n\tImpossible de les placer dans le même répertoire.\n\n";
+			close(CONF);
+			unlink("sioux.conf");
+		}
+		else {
+			close(CONF);
+			$conf = "true";
+			do "sioux start";
+		}
+	}	
+}
+else {
+	# Si l'argument n'est pas valide, on écrit un message d'erreur
+	print "Il faut entrer un argument : start | configure | stop.\n";
+	exit;
+}
