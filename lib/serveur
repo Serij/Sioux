@@ -1,0 +1,143 @@
+#!/usr/bin/perl
+use lib "lib";
+use Socket;
+use gestionServeur;
+use POSIX ":sys_wait_h";
+$cpt=0;
+
+open(CONF, "sioux.conf");
+
+#on récupère la configuration
+while(<CONF>) {
+	chomp $_;
+	@conf = split(/ = /, $_);
+	$param[$cpt] = $conf[1];
+	$cpt++;
+}
+
+
+#on stocke chaque paramètre du fichier conf dans une variable
+($port, $rootdir, $index, $cgidir, $maxclients) = @param;
+
+close(CONF);
+	
+open(SAVE, ">lib/pidSioux");
+print SAVE "$$\n";
+close(SAVE);
+
+
+# On initialise la connexion
+socket (SERVEUR, PF_INET, SOCK_STREAM, getprotobyname('tcp'));
+setsockopt (SERVEUR, SOL_SOCKET, SO_REUSEADDR, 1);
+
+$mon_adresse = sockaddr_in($port, INADDR_ANY);
+
+bind(SERVEUR, $mon_adresse) || die("bind");
+
+listen (SERVEUR, SOMAXCONN) || die("listen");
+
+# On indique que le serveur a démarré correctement.
+print "Le serveur a démarré correctement.\n";
+
+$nbClients = 0;
+
+
+while(accept(CLIENT, SERVEUR)){
+
+	$cpt = 0;
+	# On tue les processus zombies
+	while($cpt < $nbClients) {
+		if(waitpid(-1, WNOHANG)>0) {
+			$nbClients--;
+		}
+		else {
+			$cpt++;
+		}			
+	}	
+		
+	# Si le nombre de clients max n'est pas atteint
+	if($nbClients < $maxclients) {
+		$nbClients++;
+
+		$pidRequete = fork;
+	
+		if($pidRequete == 0) {
+					
+			$requete = <CLIENT>;
+
+			($methode, $ressource, $protocole) = split(/ /,$requete);
+					
+			#Si l'action n'est pas GET
+			unless($methode =~ "GET") {
+				print CLIENT "Erreur ce n'est pas une requête de type GET";
+				close(CLIENT);
+				exit;
+			}
+
+			#Si le protocole n'est pas 1.0
+			unless($protocole =~ "HTTP/1.0") {
+				print CLIENT "Vous n'utilisez pas le bon protocole";
+				close(CLIENT);
+				exit;
+			}	
+			
+			# On teste si la ressource demandée est un répertoire
+				if(-d $rootdir.$ressource) {
+					# On ajoute un / à la fin du chemin s'il n'y en a pas
+					$last = substr $ressource, -1;
+					if($last ne "/") {
+						$ressource .= "/";
+					}
+					# On envoi l'entete du document
+					print CLIENT gestionServeur::enteteHttp ("text/html", "200 OK");
+					# Dans le répertoire, on regarde si le fichier $index existe
+					if(-f "$rootdir"."$ressource"."$index") {
+						# On affiche le fichier $index
+						open(PAGE, "$rootdir"."$ressource"."$index");
+						while(<PAGE>) {
+							print CLIENT $_;
+						}
+						close(PAGE);
+					}
+					else {
+						# Sinon on affiche le contenu du dossier
+						print CLIENT "<html><head><title>Index of $ressource</title></head><body>";
+						print CLIENT "<h1>Index of $ressource</h1>";
+						print CLIENT "<ul>";
+						opendir(DOSSIER, "$rootdir"."$ressource");
+						@dossier = readdir DOSSIER;
+						@dossier = sort @dossier;
+						closedir(DOSSIER);
+
+						# Pour chaque fichier on l'affiche en lien
+						foreach $fichier (@dossier) {
+							if($fichier ne ".") {
+								if($fichier eq "..") {
+									if($ressource ne "/") {
+		 								print CLIENT "<li><a href='$ressource"."$fichier'>Parent directory</a></li>";
+		 							}
+		 						}
+		 						else {
+		 							print CLIENT "<li><a href='$ressource"."$fichier'>$fichier</a></li>";
+		 						}
+		 					}
+		 				}
+		 				print CLIENT "</ul></body></html>";
+					}
+					close(CLIENT);	
+					exit;
+				}
+					
+		}
+		else {	
+			close(CLIENT);
+		}
+	}
+	else {
+		print CLIENT "ERREUR";
+		close(CLIENT);
+	}
+	
+	
+}
+close(SERVEUR);

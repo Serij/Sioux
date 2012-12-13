@@ -33,7 +33,7 @@ elsif($ARGV[0] eq "stop") {
 	close(SAVE);
 
 	# On supprime le fichier de sauvegarde
-	unlink ("lib/pidServeur");
+	unlink ("lib/pidSioux");
 
 	print "Le serveur a été arrêté.\n";
 	exit;
